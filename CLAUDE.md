@@ -73,9 +73,20 @@ tuya-conso/
   `python -m tinytuya wizard`), it is used **in preference to `.env`** for
   API_REGION/API_KEY/API_SECRET/DEVICE_ID. `.env` is still required for
   INSTALL_DATE and ENERGY_CODE (absent from the wizard file).
-- **extract_tuya_consumption.py**: cloud connection, energy code detection,
-  daily extraction (month-by-month loop), monthly extraction (year-by-year
-  loop), CSV writing (`;` delimiter), final summary.
+- **extract_tuya_consumption.py**: cloud connection, energy quantity
+  selection, daily extraction (month-by-month loop), monthly extraction
+  (year-by-year loop), CSV writing (`;` delimiter), final per-quantity
+  summary. Accepts `--install-date YYYY-MM-DD` and `--energy-code CODE` CLI
+  flags that override the corresponding `.env` values for that run only
+  (implemented by mutating `config.INSTALL_DATE`/`config.ENERGY_CODE` in
+  place before the extraction functions read them).
+  `select_energy_quantities()`: if `ENERGY_CODE` is set (via `.env` or
+  `--energy-code`), only that single code is extracted (one `kWh`-style
+  column). If unset, **every** code returned by `/all-statistic-type` is
+  extracted (e.g. `EnergyConsumedA`/`B`/`C` + `EnergyConsumed`), one CSV
+  column per code — `extract_daily`/`extract_monthly` return
+  `{date_or_month: {code: value}}` and the CSV writers emit one column per
+  code in the header.
 
 ## Implementation choices
 
@@ -158,14 +169,17 @@ After subscribing, two more bugs surfaced and were fixed in
    on the PC321). This parameter is mandatory in `/statistics/days` and
    `/statistics/months`: without it, Tuya replies `success: true` but with
    `"0.00"` values for every date — **no error**, just wrong data.
-   **Fix**: `detect_energy_quantity()` returns `(code, stat_type)` and
-   passes it back on every days/months call.
+   **Fix**: `select_energy_quantities()` returns `[(code, stat_type), ...]`
+   and each pair is passed back on every days/months call.
 
-After these two fixes, extraction works: 1279 days extracted, real data
-starting from **2023-12-08** (the date the device was added to the Tuya
-cloud account — days before that return 0.00, no history before that date
-despite ~3 years of physical installation), total 8779.03 kWh over the
-period.
+After these two fixes, extraction works: real data starts on **2023-12-08**
+(the date the device was added to the Tuya cloud account — days before that
+return 0.00, no history before that date despite ~3 years of physical
+installation). With `ENERGY_CODE` unset, the script extracts all 4
+quantities (`EnergyConsumedA`/`B`/`C` + `EnergyConsumed`); full-period totals
+as of 2026-07-02: A=8779.81, B=6840.40, C=5541.93, total=21162.17 kWh
+(A+B+C matches the total within rounding, confirming the per-phase codes
+sum to the whole-house total).
 
 ## Quick start
 

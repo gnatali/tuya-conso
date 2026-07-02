@@ -56,16 +56,26 @@ source .venv/bin/activate
 python extract_tuya_consumption.py
 ```
 
-On the first run, leave `ENERGY_CODE` empty in `.env`: the script
-auto-detects the energy code via the `/statistics` endpoint and prints the
-list of available quantities.
+Leave `ENERGY_CODE` empty in `.env` to extract **every** quantity reported
+by the device (e.g. one column per phase plus the total) — each becomes a
+column in the output CSVs. Set it to extract a single quantity instead.
+
+### Command-line options
+
+`--install-date` and `--energy-code` override the corresponding `.env`
+values for a single run, without editing the file:
+
+```bash
+python extract_tuya_consumption.py --install-date 2024-01-01 --energy-code EnergyConsumedA
+```
 
 ### Outputs
 
-- `daily_consumption_history.csv` — columns `date; kWh`
-- `monthly_consumption_history.csv` — columns `month; kWh`
+- `daily_consumption_history.csv` — columns `date; <code1>; <code2>; ...`
+- `monthly_consumption_history.csv` — columns `month; <code1>; <code2>; ...`
 
-`;` delimiter for direct import into Excel (French locale).
+One column per extracted quantity (see `ENERGY_CODE` above). `;` delimiter
+for direct import into Excel (French locale).
 
 ## Tips
 
