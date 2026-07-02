@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# Installation de l'environnement virtuel et des dépendances.
-# Usage :  bash setup.sh
+# Sets up the virtual environment and dependencies.
+# Usage: bash setup.sh
 set -e
 
-echo ">> Création du venv (.venv)..."
+echo ">> Creating the venv (.venv)..."
 python3 -m venv .venv
 
-echo ">> Activation et mise à jour de pip..."
+echo ">> Activating and upgrading pip..."
 # shellcheck disable=SC1091
 source .venv/bin/activate
 pip install --upgrade pip
 
-echo ">> Installation des dépendances..."
+echo ">> Installing dependencies..."
 pip install -r requirements.txt
 
 if [ ! -f .env ]; then
-    echo ">> Création du fichier .env depuis .env.example..."
+    echo ">> Creating the .env file from .env.example..."
     cp .env.example .env
-    echo "   /!\\ Éditez .env pour renseigner vos identifiants Tuya."
+    echo "   /!\\ Edit .env to fill in your Tuya credentials."
 fi
 
 echo ""
-echo "Terminé. Pour utiliser le projet :"
+echo "Done. To use the project:"
 echo "  source .venv/bin/activate"
-echo "  python extraction_conso_tuya.py"
+echo "  python extract_tuya_consumption.py"

@@ -1,18 +1,18 @@
-# Extraction historique consommation Tuya (PC321-W-TY)
+# Tuya consumption history extraction (PC321-W-TY)
 
-Récupère l'historique de consommation électrique d'un compteur Tuya depuis le
-**service Statistiques** du cloud Tuya (jour / mois), sans rien modifier sur
-l'installation. C'est la même source de données que la courbe affichée dans
-l'app Smart Life — donc conservée sur le long terme, contrairement aux logs
-bruts limités à 7 jours.
+Retrieves the electricity consumption history of a Tuya meter from the
+**Statistics service** of the Tuya cloud (daily / monthly), without
+modifying the installation. This is the same data source that feeds the
+chart shown in the Smart Life app — so it's kept long-term, unlike raw
+device logs which are limited to 7 days.
 
-## Prérequis
+## Requirements
 
-- Python 3.10+ (testé sous Debian / WSL2)
-- Un projet cloud sur la **Tuya IoT Platform** avec le compte Smart Life lié
-  (APIs *IoT Core* et *Smart Home Basic Service* autorisées)
-- Les identifiants du projet : `Access ID`, `Access Secret`, et le `Device ID`
-  du compteur
+- Python 3.10+ (tested on Debian / WSL2)
+- A cloud project on the **Tuya IoT Platform** with the Smart Life account
+  linked (*IoT Core* and *Smart Home Basic Service* APIs authorized)
+- The project credentials: `Access ID`, `Access Secret`, and the meter's
+  `Device ID`
 
 ## Installation
 
@@ -20,14 +20,15 @@ bruts limités à 7 jours.
 bash setup.sh
 ```
 
-Le script crée le venv `.venv`, installe les dépendances et génère un `.env`
-à partir du modèle. Éditez ensuite `.env` avec vos identifiants :
+The script creates the `.venv` virtual environment, installs dependencies,
+and generates a `.env` file from the template. Then edit `.env` with your
+credentials:
 
 ```bash
 nano .env
 ```
 
-Installation manuelle équivalente :
+Equivalent manual installation:
 
 ```bash
 python3 -m venv .venv
@@ -36,45 +37,46 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-### Alternative : générer la config via le wizard TinyTuya
+### Alternative: generate the config via the TinyTuya wizard
 
 ```bash
 python3 -m tinytuya wizard
 ```
 
-Cette commande produit un fichier `tinytuya.json` (région, Access ID/Secret,
-Device ID). **S'il est présent à la racine du projet, il est utilisé en
-priorité sur `.env`** pour la connexion (région/clés/device) — `.env` reste
-nécessaire pour `INSTALL_DATE` et éventuellement `CODE_ENERGIE`. Ce fichier
-n'est pas versionné (voir `.gitignore`).
+This command produces a `tinytuya.json` file (region, Access ID/Secret,
+Device ID). **If present at the project root, it takes precedence over
+`.env`** for the connection (region/keys/device) — `.env` is still required
+for `INSTALL_DATE` and optionally `ENERGY_CODE`. This file is not committed
+to version control (see `.gitignore`).
 
-## Utilisation
+## Usage
 
 ```bash
 source .venv/bin/activate
-python extraction_conso_tuya.py
+python extract_tuya_consumption.py
 ```
 
-Au premier lancement, laissez `CODE_ENERGIE` vide dans `.env` : le script
-détecte automatiquement le code d'énergie via l'endpoint `/statistics` et
-affiche la liste des grandeurs disponibles.
+On the first run, leave `ENERGY_CODE` empty in `.env`: the script
+auto-detects the energy code via the `/statistics` endpoint and prints the
+list of available quantities.
 
-### Sorties
+### Outputs
 
-- `historique_conso_journalier.csv` — colonnes `date; kWh`
-- `historique_conso_mensuel.csv` — colonnes `mois; kWh`
+- `daily_consumption_history.csv` — columns `date; kWh`
+- `monthly_consumption_history.csv` — columns `month; kWh`
 
-Séparateur `;` pour un import direct dans Excel (locale française).
+`;` delimiter for direct import into Excel (French locale).
 
-## Conseils
+## Tips
 
-- **Premier run** : vérifiez que la liste de codes s'affiche et qu'un mois
-  récent remonte des valeurs cohérentes avec l'app, avant de vous fier aux
-  données complètes.
-- **Erreur de permission alors que l'app affiche la courbe** : le projet cloud
-  n'a probablement pas souscrit au service *IoT Core*
-  (Cloud > Cloud Services, gratuit en période d'essai).
-- Le fichier `.env` contient vos secrets et n'est pas versionné (`.gitignore`).
+- **First run**: check that the list of codes is displayed and that a
+  recent month's values line up with the app before trusting the full
+  history.
+- **Permission error even though the app shows the chart**: the cloud
+  project probably hasn't subscribed to the *IoT Core* service
+  (Cloud > Cloud Services, free during the trial period).
+- The `.env` file contains your secrets and is not committed to version
+  control (`.gitignore`).
 
 ## Structure
 
@@ -85,6 +87,6 @@ tuya-conso/
 ├── setup.sh
 ├── .env.example
 ├── .gitignore
-├── config.py                  # chargement de la config depuis .env
-└── extraction_conso_tuya.py   # script principal
+├── config.py                     # loads config from .env
+└── extract_tuya_consumption.py   # main script
 ```

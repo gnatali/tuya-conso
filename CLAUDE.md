@@ -1,201 +1,210 @@
-# CLAUDE.md — Contexte projet : extraction historique conso Tuya
+# CLAUDE.md — Project context: Tuya consumption history extraction
 
-Ce fichier est lu automatiquement par Claude Code au démarrage. Il contient tout
-le nécessaire pour reprendre le projet sans reconstruire le raisonnement.
+This file is read automatically by Claude Code at startup. It contains
+everything needed to resume the project without rebuilding the reasoning
+from scratch.
 
-## Objectif
+## Goal
 
-Récupérer l'**historique de consommation électrique** d'un compteur triphasé
-Tuya **PC321-W-TY** (fabricant OWON/EARU), installé depuis ~3 ans et connecté au
-cloud Tuya. Contrainte forte : **ne rien modifier sur l'installation existante**.
+Retrieve the **electricity consumption history** of a three-phase Tuya
+**PC321-W-TY** meter (made by OWON/EARU), installed ~3 years ago and
+connected to the Tuya cloud. Hard constraint: **do not modify anything on
+the existing installation**.
 
-Finalité : alimenter un simulateur Excel HC/HP (heures creuses / heures pleines)
-avec des données de conso journalières réelles.
+Purpose: feed an Excel off-peak/peak hours (HC/HP) simulator with real
+daily consumption data.
 
-## Décision technique clé (à ne pas remettre en cause sans raison)
+## Key technical decision (do not revisit without a reason)
 
-L'historique long terme est récupérable via le **service Statistiques** du cloud
-Tuya, PAS via les logs bruts.
+Long-term history can be retrieved via the Tuya cloud **Statistics
+service**, NOT via raw logs.
 
-- **Logs bruts d'appareil** (`/v1.0/devices/{id}/logs`) : conservés **7 jours**
-  seulement en gratuit. La rétention longue (1–36 mois) est un service payant
-  qui n'archive que **vers l'avant** à partir de la souscription → inutile ici,
-  car jamais souscrit sur les 3 ans passés. NE PAS partir sur cette piste pour
-  l'historique.
-- **Service Statistiques** (`/v1.0/devices/{id}/statistics/...`) : données
-  **agrégées** par jour/semaine/mois, **conservées sur le long terme**. C'est la
-  source qui alimente la courbe de l'app Smart Life. **C'est notre source.**
+- **Raw device logs** (`/v1.0/devices/{id}/logs`): kept for only **7 days**
+  on the free tier. Long-term retention (1–36 months) is a paid service that
+  only archives **going forward** from the subscription date → useless here,
+  since it was never subscribed to over the past 3 years. DO NOT pursue this
+  path for the history.
+- **Statistics service** (`/v1.0/devices/{id}/statistics/...`): **aggregated**
+  data by day/week/month, **kept long-term**. This is the source that feeds
+  the Smart Life app's chart. **This is our source.**
 
-Confirmé côté utilisateur : l'app Smart Life affiche bien tout l'historique
-journalier → le service statistique est actif pour ce produit.
+Confirmed by the user: the Smart Life app does show the full daily history →
+the statistics service is active for this product.
 
-## Endpoints Tuya utilisés
+## Tuya endpoints used
 
-Base EU : `https://openapi.tuyaeu.com` (data center Central Europe).
+EU base: `https://openapi.tuyaeu.com` (Central Europe data center).
 
-- `GET /v1.0/devices/{id}/all-statistic-type` → liste des grandeurs (codes)
-  disponibles (⚠️ PAS `/statistics` seul : ce chemin n'existe pas côté Tuya et
-  renvoie l'erreur 1108 « uri path invalid » — confirmé par test direct le
-  2026-07-01).
+- `GET /v1.0/devices/{id}/all-statistic-type` → list of available
+  quantities (codes) (⚠️ NOT `/statistics` alone: this path doesn't exist on
+  Tuya's side and returns error 1108 "uri path invalid" — confirmed by
+  direct testing on 2026-07-01).
 - `GET /v1.0/devices/{id}/statistics/days?code=X&start_day=YYYYMMDD&end_day=YYYYMMDD`
 - `GET /v1.0/devices/{id}/statistics/months?code=X&start_month=YYYYMM&end_month=YYYYMM`
-  - **Contrainte** : mois début et fin dans la MÊME année → boucler année/année.
-- `GET /v1.0/devices/{id}/statistics/total?code=X` → cumul global (une valeur)
+  - **Constraint**: start and end months must be in the SAME year → loop
+    year by year.
+- `GET /v1.0/devices/{id}/statistics/total?code=X` → global cumulative total
+  (a single value)
 
-Code énergie : très probablement `add_ele`. Détection auto implémentée via
-`/statistics` (priorité add_ele > electricity > *ele*/*energy*).
+Energy code: most likely `add_ele`. Auto-detection implemented via
+`/statistics` (priority order: add_ele > electricity > *ele*/*energy*).
 
 ## Architecture
 
 ```
 tuya-conso/
-├── CLAUDE.md                  # ce fichier
-├── README.md                  # doc utilisateur
-├── requirements.txt           # tinytuya, python-dotenv
-├── setup.sh                   # crée venv .venv, installe, génère .env
-├── .env.example               # modèle config (secrets hors code)
-├── .gitignore                 # exclut .env, .venv, *.csv
-├── config.py                  # charge/valide la config depuis .env
-└── extraction_conso_tuya.py   # script principal
+├── CLAUDE.md                     # this file
+├── README.md                     # user documentation
+├── requirements.txt              # tinytuya, python-dotenv
+├── setup.sh                      # creates the .venv venv, installs, generates .env
+├── .env.example                  # config template (secrets kept out of code)
+├── .gitignore                    # excludes .env, .venv, *.csv
+├── config.py                     # loads/validates config from .env
+└── extract_tuya_consumption.py   # main script
 ```
 
-### Rôle des modules
+### Module roles
 
-- **config.py** : lit `.env` via python-dotenv, valide les variables requises,
-  sort proprement avec message d'aide si manquant. Expose API_REGION, API_KEY,
-  API_SECRET, DEVICE_ID, DATE_INSTALLATION (date), CODE_ENERGIE (str|None),
-  CSV_JOUR, CSV_MOIS.
-  Si `tinytuya.json` existe à la racine (généré par
-  `python -m tinytuya wizard`), il est utilisé **en priorité sur `.env`** pour
-  API_REGION/API_KEY/API_SECRET/DEVICE_ID. `.env` reste requis pour
-  INSTALL_DATE et CODE_ENERGIE (absents du fichier wizard).
-- **extraction_conso_tuya.py** : connexion Cloud, détection code énergie,
-  extraction journalière (boucle mois/mois), mensuelle (boucle année/année),
-  écriture CSV (séparateur `;`), récap final.
+- **config.py**: reads `.env` via python-dotenv, validates required
+  variables, exits cleanly with a help message if something is missing.
+  Exposes API_REGION, API_KEY, API_SECRET, DEVICE_ID, INSTALL_DATE (date),
+  ENERGY_CODE (str|None), CSV_DAILY, CSV_MONTHLY.
+  If `tinytuya.json` exists at the project root (generated by
+  `python -m tinytuya wizard`), it is used **in preference to `.env`** for
+  API_REGION/API_KEY/API_SECRET/DEVICE_ID. `.env` is still required for
+  INSTALL_DATE and ENERGY_CODE (absent from the wizard file).
+- **extract_tuya_consumption.py**: cloud connection, energy code detection,
+  daily extraction (month-by-month loop), monthly extraction (year-by-year
+  loop), CSV writing (`;` delimiter), final summary.
 
-## Choix d'implémentation
+## Implementation choices
 
-- **TinyTuya** (lib Python) gère la signature HMAC-SHA256 et le renouvellement
-  du token (expire toutes les 2h). Méthode clé : `Cloud.cloudrequest(url)` —
-  vérifiée présente en v1.19. Ne PAS recoder la signature à la main.
-- Secrets externalisés dans `.env` (souveraineté / versionnable sous Git).
-- CSV en séparateur `;` pour import Excel en locale FR.
+- **TinyTuya** (Python lib) handles HMAC-SHA256 signing and token renewal
+  (expires every 2h). Key method: `Cloud.cloudrequest(url)` — confirmed
+  present in v1.19. Do NOT hand-roll the signature.
+- Secrets externalized in `.env` (data sovereignty / committable to Git).
+- CSV with `;` delimiter for Excel import under the French locale.
 
-## Codes d'erreur Tuya gérés (fonction `appel`)
+## Tuya error codes handled (`call_api` function)
 
-| Code     | Sens / action |
+| Code     | Meaning / action |
 |----------|---------------|
-| 1004     | Signature KO : vérifier ACCESS_ID/SECRET + région |
-| 1106     | Permission : lier compte app au projet (onglet Devices) |
-| 1010     | Token invalide/expiré (TinyTuya renouvelle seul) |
-| 28841105 | API non autorisée : souscrire IoT Core + Smart Home Basic |
-| 28841002 | Abonnement IoT Core expiré : prolonger l'essai |
-| 2007     | Stats non activées pour le produit (ticket PID/DP) |
-| 1108     | URI invalide : mauvais chemin d'endpoint (ex. `/statistics` seul au lieu de `/all-statistic-type`) |
-| 28841101 | API non souscrite : le service Statistiques doit être souscrit séparément dans Cloud > Cloud Services (Tuya IoT Platform), en plus de IoT Core / Smart Home Basic |
+| 1004     | Bad signature: check ACCESS_ID/SECRET + region |
+| 1106     | Permission: link the app account to the project (Devices tab) |
+| 1010     | Invalid/expired token (TinyTuya renews it on its own) |
+| 28841105 | API not authorized: subscribe to IoT Core + Smart Home Basic |
+| 28841002 | IoT Core subscription expired: extend the trial |
+| 2007     | Stats not enabled for the product (PID/DP support ticket) |
+| 1108     | Invalid URI: wrong endpoint path (e.g. `/statistics` alone instead of `/all-statistic-type`) |
+| 28841101 | API not subscribed: the Statistics service must be subscribed separately in Cloud > Cloud Services (Tuya IoT Platform), in addition to IoT Core / Smart Home Basic |
 
-## Prérequis côté Tuya IoT Platform
+## Prerequisites on the Tuya IoT Platform
 
-Projet cloud (Smart Home), data center **Central Europe**, compte Smart Life
-lié (onglet Devices > Link App Account, QR code), APIs **IoT Core** +
-**Smart Home Basic Service** souscrites/autorisées. Access ID/Secret dans
-Overview. Device ID via wizard TinyTuya (`python -m tinytuya wizard`) ou app.
+Cloud project (Smart Home), **Central Europe** data center, Smart Life
+account linked (Devices tab > Link App Account, QR code), **IoT Core** +
+**Smart Home Basic Service** APIs subscribed/authorized. Access ID/Secret
+found in Overview. Device ID via the TinyTuya wizard
+(`python -m tinytuya wizard`) or the app.
 
-⚠️ **CORRECTIF (2026-07-01)** : contrairement à ce qu'on pensait au départ,
-l'API Statistiques n'est **PAS en libre-service** dans Cloud > Cloud Services
-(l'utilisateur a cherché « Advanced Device Services »/« Device Statistics » et
-ne les a pas trouvés — normal, ils ne sont pas proposés en auto-souscription).
+⚠️ **CORRECTION (2026-07-01)**: contrary to what we initially thought, the
+Statistics API is **NOT self-service** in Cloud > Cloud Services (the user
+searched for "Advanced Device Services"/"Device Statistics" and didn't find
+them — expected, since they aren't offered for self-subscription).
 
-L'activation nécessite un **ticket de support Tuya**, car l'API doit être
-débloquée manuellement par les équipes Tuya pour le PID (Product ID) et les DP
-(Data Point) concernés. C'est cohérent avec le code d'erreur 2007 déjà repéré
-plus bas — 28841101 est en fait la même famille de blocage, rencontrée plus
-tôt dans le flux (à `/all-statistic-type`, avant même d'atteindre 2007 sur
+Activation requires a **Tuya support ticket**, since the API must be
+manually unlocked by Tuya's team for the relevant PID (Product ID) and DP
+(Data Point). This is consistent with the 2007 error code noted below —
+28841101 is actually the same family of block, encountered earlier in the
+flow (on `/all-statistic-type`, before even reaching 2007 on
 `/statistics/days`).
 
-Procédure :
-1. Sur https://developer.tuya.com, **Tech Support** (coin haut droit) →
-   Service Center (https://service.console.tuya.com/) → soumettre un
-   **General Ticket** (pas de Quick Ticket dédié aux stats a priori).
-2. Dans le ticket, indiquer explicitement :
-   - **Product ID (PID)** du compteur PC321 : `9rjjf6rdkca9woju`
-   - **Data Point (DP) à activer pour les statistiques** : DP `131`
-     (code `EnergyConsumed`, énergie cumulée totale). Si besoin de la
-     ventilation par phase, ajouter aussi DP `106`/`116`/`126`
+Procedure:
+1. On https://developer.tuya.com, **Tech Support** (top-right corner) →
+   Service Center (https://service.console.tuya.com/) → submit a
+   **General Ticket** (no dedicated Quick Ticket for stats, apparently).
+2. In the ticket, explicitly state:
+   - **Product ID (PID)** of the PC321 meter: `9rjjf6rdkca9woju`
+   - **Data Point (DP) to enable for statistics**: DP `131`
+     (code `EnergyConsumed`, total cumulative energy). If a per-phase
+     breakdown is needed, also add DP `106`/`116`/`126`
      (`EnergyConsumedA`/`B`/`C`).
-   - Demander l'activation du **service Statistiques** (`/statistics/days`,
-     `/statistics/months`, `/statistics/total`, `/all-statistic-type`) pour ce
-     PID/ces DP.
-3. Une fois Tuya confirme l'activation côté produit, relancer
-   `python extraction_conso_tuya.py`.
+   - Request activation of the **Statistics service** (`/statistics/days`,
+     `/statistics/months`, `/statistics/total`, `/all-statistic-type`) for
+     this PID/these DPs.
+3. Once Tuya confirms activation on the product side, re-run
+   `python extract_tuya_consumption.py`.
 
-**RÉSOLU (2026-07-02)** : le support Tuya a répondu que 28841101 se corrige
-en souscrivant le service à cette URL :
-https://www.tuya.com/vas/commodity/INTERNAL_TEST_V2 (pas de ticket PID/DP
-nécessaire dans ce cas précis — la réponse ci-dessus documente la piste
-initialement recommandée par Tuya, gardée au cas où elle redevienne
-pertinente pour un autre produit/compte).
+**RESOLVED (2026-07-02)**: Tuya support replied that 28841101 is fixed by
+subscribing to the service at this URL:
+https://www.tuya.com/vas/commodity/INTERNAL_TEST_V2 (no PID/DP ticket
+needed in this particular case — the procedure above documents the path
+Tuya initially recommended, kept in case it becomes relevant again for
+another product/account).
 
-Après souscription, deux bugs supplémentaires sont apparus et ont été
-corrigés dans `extraction_conso_tuya.py` :
+After subscribing, two more bugs surfaced and were fixed in
+`extract_tuya_consumption.py`:
 
-1. **Paramètres de requête non triés → `1004 sign invalid`**. Le script
-   concaténait `code`, `start_day`, `end_day` à la main dans l'URL. Le nouvel
-   algorithme de signature Tuya exige que les paramètres soient triés par
-   ordre alphabétique de clé pour le calcul de signature (`end_day` <
-   `start_day` alphabétiquement ≠ notre ordre) → signature invalide.
-   Confirmé par test direct : même requête avec les params réordonnés
-   alphabétiquement, ou passés via le dict `query=` de TinyTuya (qui trie
-   automatiquement), fonctionne. **Fix** : toujours passer les paramètres via
-   `query=` (dict), jamais concaténés dans l'URL.
-2. **`stat_type` manquant → données silencieusement à zéro**. `/all-statistic-type`
-   renvoie pour chaque code un `stat_type` (ex. `"minux"` pour `EnergyConsumed`
-   sur le PC321). Ce paramètre est obligatoire dans `/statistics/days` et
-   `/statistics/months` : sans lui, Tuya répond `success: true` mais avec des
-   valeurs à `"0.00"` pour toutes les dates — **aucune erreur**, juste des
-   données fausses. **Fix** : `detecter_grandeur()` retourne `(code,
-   stat_type)` et le repasse à chaque appel days/months.
+1. **Unsorted query parameters → `1004 sign invalid`**. The script
+   concatenated `code`, `start_day`, `end_day` by hand into the URL. Tuya's
+   new signing algorithm requires parameters to be sorted alphabetically by
+   key for the signature computation (`end_day` < `start_day`
+   alphabetically ≠ our order) → invalid signature. Confirmed by direct
+   testing: the same request with params reordered alphabetically, or
+   passed via TinyTuya's `query=` dict (which sorts automatically), works.
+   **Fix**: always pass parameters via `query=` (dict), never concatenated
+   into the URL.
+2. **Missing `stat_type` → silently zeroed data**. `/all-statistic-type`
+   returns a `stat_type` for each code (e.g. `"minux"` for `EnergyConsumed`
+   on the PC321). This parameter is mandatory in `/statistics/days` and
+   `/statistics/months`: without it, Tuya replies `success: true` but with
+   `"0.00"` values for every date — **no error**, just wrong data.
+   **Fix**: `detect_energy_quantity()` returns `(code, stat_type)` and
+   passes it back on every days/months call.
 
-Après ces deux fix, l'extraction fonctionne : 1279 jours extraits, données
-réelles à partir du **2023-12-08** (date d'ajout de l'appareil au compte
-cloud Tuya — les jours antérieurs renvoient 0.00, pas d'historique avant
-cette date malgré ~3 ans d'installation physique), total 8779.03 kWh sur la
-période.
+After these two fixes, extraction works: 1279 days extracted, real data
+starting from **2023-12-08** (the date the device was added to the Tuya
+cloud account — days before that return 0.00, no history before that date
+despite ~3 years of physical installation), total 8779.03 kWh over the
+period.
 
-## Démarrage rapide
+## Quick start
 
 ```bash
 bash setup.sh
 nano .env                      # ACCESS_ID, ACCESS_SECRET, DEVICE_ID, INSTALL_DATE
 source .venv/bin/activate
-python extraction_conso_tuya.py
+python extract_tuya_consumption.py
 ```
 
-Premier run : laisser `CODE_ENERGIE` vide → le script affiche la liste des codes.
-Vérifier qu'un mois récent recoupe l'app avant de se fier aux 3 ans.
+First run: leave `ENERGY_CODE` empty → the script prints the list of codes.
+Check that a recent month matches the app before trusting the full 3 years.
 
-## Points en suspens / prochaines étapes
+## Open items / next steps
 
-1. ~~Confirmer le code énergie réel du PC321~~ **FAIT (2026-07-02)** :
-   `EnergyConsumed` (total 3 phases, DP 131), `stat_type=minux`. Codes par
-   phase disponibles si besoin : `EnergyConsumedA`/`B`/`C` (DP 106/116/126).
-2. **Ventilation HC/HP** : le journalier statistique ne distingue PAS les
-   tranches horaires. Deux options à discuter :
-   - Si un profil horaire fin est requis → il n'existe pas dans l'historique ;
-     il faudrait le construire à partir de maintenant (polling local LAN via
-     TinyTuya `Device`, intervalle 5–10 s, cf. historique de conversation).
-   - Sinon, appliquer une clé de répartition HC/HP au journalier (approximation).
-3. **Intégration simulateur Excel** : le CSV `date;kWh` s'importe directement.
-   Prévoir éventuellement une colonne HC/HP si étape 2 tranchée.
-4. ~~Vérifier rétention réelle des stats journalières~~ **FAIT (2026-07-02)** :
-   les données réelles démarrent le 2023-12-08 (date d'ajout de l'appareil au
-   compte cloud Tuya), pas avant malgré l'installation physique ~3 ans plus
-   tôt. Rien avant cette date côté Tuya, quelle que soit la méthode.
+1. ~~Confirm the actual energy code for the PC321~~ **DONE (2026-07-02)**:
+   `EnergyConsumed` (total across 3 phases, DP 131), `stat_type=minux`.
+   Per-phase codes available if needed: `EnergyConsumedA`/`B`/`C`
+   (DP 106/116/126).
+2. **HC/HP (off-peak/peak) split**: the daily statistics do NOT distinguish
+   time-of-day bands. Two options to discuss:
+   - If a fine-grained hourly profile is required → it doesn't exist in the
+     history; it would need to be built going forward (local LAN polling
+     via TinyTuya `Device`, 5–10s interval, see conversation history).
+   - Otherwise, apply an HC/HP split ratio to the daily totals
+     (approximation).
+3. **Excel simulator integration**: the `date;kWh` CSV imports directly.
+   Possibly add an HC/HP column if item 2 is settled.
+4. ~~Check the actual retention of daily stats~~ **DONE (2026-07-02)**: real
+   data starts on 2023-12-08 (the date the device was added to the Tuya
+   cloud account), not before, despite the physical installation being
+   ~3 years older. Nothing available before that date on Tuya's side,
+   regardless of method.
 
-## Contexte utilisateur (rappel)
+## User context (reminder)
 
-- Environnement : Debian/WSL2, Python 3.12, préférence LAN local / souveraineté
-  des données (éviter dépendance cloud quand possible).
-- Alternative 100 % locale déjà évoquée : polling direct du compteur via
-  TinyTuya `Device` (nécessite local_key), sans passer par le cloud — pertinent
-  pour le futur, mais inopérant pour récupérer l'historique passé.
+- Environment: Debian/WSL2, Python 3.12, preference for local LAN / data
+  sovereignty (avoid cloud dependency when possible).
+- A fully local alternative was already discussed: polling the meter
+  directly via TinyTuya `Device` (requires local_key), without going through
+  the cloud — relevant for the future, but useless for retrieving past
+  history.
