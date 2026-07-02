@@ -115,6 +115,7 @@ for direct import into Excel (French locale).
 ```
 tuya-conso/
 ├── README.md
+├── LICENSE
 ├── requirements.txt
 ├── setup.sh
 ├── .env.example
@@ -122,3 +123,7 @@ tuya-conso/
 ├── config.py                     # loads config from .env
 └── extract_tuya_consumption.py   # main script
 ```
+
+## License
+
+[MIT](LICENSE)
