@@ -10,9 +10,31 @@ device logs which are limited to 7 days.
 
 - Python 3.10+ (tested on Debian / WSL2)
 - A cloud project on the **Tuya IoT Platform** with the Smart Life account
-  linked (*IoT Core* and *Smart Home Basic Service* APIs authorized)
+  linked
 - The project credentials: `Access ID`, `Access Secret`, and the meter's
   `Device ID`
+
+### Required Tuya cloud services
+
+All three must be subscribed **and** authorized for the project (Cloud >
+Cloud Services on the Tuya IoT Platform), or calls fail with permission
+errors even though credentials are correct:
+
+| Service | Why it's needed |
+|---|---|
+| **IoT Core** | Base device management/authentication API — required for every call. |
+| **Smart Home Basic Service** | Links the project to the Smart Life app account (Devices tab > Link App Account). |
+| **Statistics service** | Serves the `/statistics/*` endpoints this script relies on. **Not self-service** — subscribe at https://www.tuya.com/vas/commodity/INTERNAL_TEST_V2 (confirmed working method; see `CLAUDE.md` if that link ever stops working — a PID/DP support ticket is the fallback path). |
+
+### API endpoints called by the script
+
+- `GET /v1.0/devices/{device_id}/all-statistic-type` — discovers which
+  energy quantities (codes) the device reports.
+- `GET /v1.0/devices/{device_id}/statistics/days` — daily history.
+- `GET /v1.0/devices/{device_id}/statistics/months` — monthly history.
+
+(`/statistics/total`, which returns a single lifetime cumulative value, is
+part of the same Statistics service but isn't called by this script.)
 
 ## Installation
 

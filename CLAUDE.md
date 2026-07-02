@@ -31,23 +31,49 @@ service**, NOT via raw logs.
 Confirmed by the user: the Smart Life app does show the full daily history →
 the statistics service is active for this product.
 
+## Required Tuya cloud services (subscribe + authorize for the project)
+
+All three live under Cloud > Cloud Services on the Tuya IoT Platform.
+Subscribing is not enough — each must also be **authorized for the specific
+project** (Cloud > Development > project > Service API tab > Go to
+Authorize), otherwise calls fail with permission errors despite correct
+credentials.
+
+| Service | Role |
+|---|---|
+| **IoT Core** | Base device management/authentication — required for every call. |
+| **Smart Home Basic Service** | Links the project to the Smart Life app account (Devices tab > Link App Account, QR code). |
+| **Statistics service** | Backs every `/statistics/*` endpoint below. **Not self-service** in the normal Cloud Services store — see "Prerequisites" below for the actual activation path found (2026-07-02). |
+
 ## Tuya endpoints used
 
 EU base: `https://openapi.tuyaeu.com` (Central Europe data center).
 
+Endpoints actually called by `extract_tuya_consumption.py`:
+
 - `GET /v1.0/devices/{id}/all-statistic-type` → list of available
   quantities (codes) (⚠️ NOT `/statistics` alone: this path doesn't exist on
   Tuya's side and returns error 1108 "uri path invalid" — confirmed by
-  direct testing on 2026-07-01).
-- `GET /v1.0/devices/{id}/statistics/days?code=X&start_day=YYYYMMDD&end_day=YYYYMMDD`
-- `GET /v1.0/devices/{id}/statistics/months?code=X&start_month=YYYYMM&end_month=YYYYMM`
+  direct testing on 2026-07-01). Called by `select_energy_quantities()`.
+- `GET /v1.0/devices/{id}/statistics/days?code=X&start_day=YYYYMMDD&end_day=YYYYMMDD&stat_type=Y`
+  → called by `extract_daily()`.
+- `GET /v1.0/devices/{id}/statistics/months?code=X&start_month=YYYYMM&end_month=YYYYMM&stat_type=Y`
+  → called by `extract_monthly()`.
   - **Constraint**: start and end months must be in the SAME year → loop
     year by year.
-- `GET /v1.0/devices/{id}/statistics/total?code=X` → global cumulative total
-  (a single value)
 
-Energy code: most likely `add_ele`. Auto-detection implemented via
-`/statistics` (priority order: add_ele > electricity > *ele*/*energy*).
+Documented but NOT called by the script (explored during debugging, kept
+here for reference):
+
+- `GET /v1.0/devices/{id}/statistics/total?code=X&stat_type=Y` → global
+  cumulative total (a single value). Confirmed working during debugging
+  (2026-07-02) and used to cross-check the daily-sum totals, but the script
+  has no use for a single lifetime total.
+
+Energy quantities on this device (from `/all-statistic-type`): `EnergyConsumed`
+(whole-house total, DP 131) and `EnergyConsumedA`/`B`/`C` (per-phase, DP
+106/116/126), all with `stat_type=minux`. See "Open items" for how
+`ENERGY_CODE` selects between extracting one of these or all of them.
 
 ## Architecture
 
