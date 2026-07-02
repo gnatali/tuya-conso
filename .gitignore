@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Environnement virtuel
+.venv/
+venv/
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Fichiers TinyTuya générés
+devices.json
+tinytuya.json
+snapshot.json
+tuya-raw.json
+
+# Sorties CSV
+*.csv
