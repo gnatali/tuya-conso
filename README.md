@@ -6,6 +6,14 @@ modifying the installation. This is the same data source that feeds the
 chart shown in the Smart Life app — so it's kept long-term, unlike raw
 device logs which are limited to 7 days.
 
+## 🔗 Related Repositories (Tasmota & Tuya Ecosystem)
+
+This repository is part of a broader suite of tools for local smart home control with Tasmota and Tuya:
+
+* **[tasmota32-zbgw03-matter](https://github.com/gnatali/tasmota32-zbgw03-matter)** — Custom Tasmota firmware for the eWeLink ZB-GW03 gateway supporting Zigbee (EZSP), Matter, and a built-in local Tuya driver.
+* **[TasmoFlow](https://github.com/gnatali/TasmoFlow)** — No-code web interface and automation engine for Tasmota gateways to manage Zigbee and local Tuya devices.
+* **[tuya-conso](https://github.com/gnatali/tuya-conso)** — Python utility to extract historical daily and monthly consumption data from Tuya energy meters.
+
 ## Requirements
 
 - Python 3.10+ (tested on Debian / WSL2)
